@@ -18,7 +18,7 @@ export class AuthService {
     // Buscar usuario por email (Supabase)
     const { data: user, error } = await this.supabase
       .from('usuarios')
-      .select('id, email, password, nombre_completo, username')
+      .select('id, email, password, nombre_completo, username, permisos_globales')
       .eq('email', email)
       .single();
 
@@ -33,15 +33,39 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
-    const { password: _, ...userWithoutPassword } = user;
-    return userWithoutPassword;
+    let permisosSet = new Set<string>();
+
+    // 1. Obtener nombres de permisos globales directos
+    if (user.permisos_globales && Array.isArray(user.permisos_globales) && user.permisos_globales.length > 0) {
+      const { data: globalPerms } = await this.supabase
+        .from('permisos')
+        .select('nombre')
+        .in('id', user.permisos_globales);
+      
+      if (globalPerms) {
+        globalPerms.forEach(p => permisosSet.add(p.nombre));
+      }
+    }
+
+    // Guardar los nombres de los permisos en el usuario (excluyendo campos sensibles)
+    const { password: _, permisos_globales: __, ...userWithoutPassword } = user;
+    return {
+      ...userWithoutPassword,
+      permisos_globales: Array.from(permisosSet),
+    };
   }
 
   async login(user: any) {
-    const payload = { email: user.email, sub: user.id, username: user.username };
+    const payload = { 
+      sub: user.id, 
+      email: user.email, 
+      username: user.username,
+      nombreCompleto: user.nombre_completo,
+      permisos_globales: user.permisos_globales || []
+    };
     return {
       access_token: this.jwtService.sign(payload),
-      user,
+      user, // El usuario devuelto ahora incluye nombre_completo y permisos_globales resueltos
     };
   }
 

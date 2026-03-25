@@ -8,7 +8,7 @@ export class UsersService {
   constructor(@Inject('SUPABASE_CLIENT') private supabase: SupabaseClient) {}
 
   async create(createUserDto: CreateUserDto) {
-    const { nombreCompleto, username, email, password } = createUserDto;
+    const { nombreCompleto, username, email, password, telefono, direccion, permisos } = createUserDto;
 
     const { data: existingUsers } = await this.supabase
       .from('usuarios')
@@ -24,6 +24,18 @@ export class UsersService {
 
     const dt = new Date().toISOString().split('T')[0];
 
+    let permisos_globales: string[] = [];
+    if (permisos && permisos.length > 0) {
+      const { data: perms } = await this.supabase
+        .from('permisos')
+        .select('id')
+        .in('nombre', permisos);
+        
+      if (perms) {
+        permisos_globales = perms.map((p) => p.id);
+      }
+    }
+
     const { data: newUser, error } = await this.supabase
       .from('usuarios')
       .insert([
@@ -32,7 +44,10 @@ export class UsersService {
           username,
           email,
           password: hashedPassword,
+          telefono: telefono || null,
+          direccion: direccion || null,
           fecha_inicio: dt,
+          permisos_globales: permisos_globales.length > 0 ? permisos_globales : null,
         },
       ])
       .select('id, nombre_completo, username, email, creado_en')

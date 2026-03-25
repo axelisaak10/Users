@@ -2,6 +2,7 @@ import { Injectable, Inject, ConflictException, InternalServerErrorException } f
 import { SupabaseClient } from '@supabase/supabase-js';
 import * as bcrypt from 'bcrypt';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 
 @Injectable()
 export class UsersService {
@@ -73,6 +74,58 @@ export class UsersService {
 
     return {
       permissions: data.permisos_globales || [],
+    };
+  }
+
+  async updateProfile(userId: string, updateProfileDto: UpdateProfileDto) {
+    const { nombreCompleto, username, email, password, telefono, direccion, fecha_inicio } = updateProfileDto;
+    
+    // Validar nombre de usuario o correo existente que pertenezca a OTRO usuario
+    if (email || username) {
+      const orConditions: string[] = [];
+      if (email) orConditions.push(`email.eq.${email}`);
+      if (username) orConditions.push(`username.eq.${username}`);
+
+      if (orConditions.length > 0) {
+        const { data: existing } = await this.supabase
+          .from('usuarios')
+          .select('id')
+          .neq('id', userId)
+          .or(orConditions.join(','));
+
+        if (existing && existing.length > 0) {
+          throw new ConflictException('El correo o nombre de usuario ya está siendo usado por otra cuenta');
+        }
+      }
+    }
+
+    const updates: any = {};
+    if (nombreCompleto) updates.nombre_completo = nombreCompleto;
+    if (username) updates.username = username;
+    if (email) updates.email = email;
+    if (telefono !== undefined) updates.telefono = telefono;
+    if (direccion !== undefined) updates.direccion = direccion;
+    if (fecha_inicio) updates.fecha_inicio = fecha_inicio;
+
+    if (password) {
+      updates.password = await bcrypt.hash(password, 10);
+    }
+
+    const { data, error } = await this.supabase
+      .from('usuarios')
+      .update(updates)
+      .eq('id', userId)
+      .select('id, nombre_completo, username, email, telefono, direccion, fecha_inicio')
+      .single();
+
+    if (error) {
+      throw new InternalServerErrorException(error.message);
+    }
+
+    const { nombre_completo, ...rest } = data;
+    return {
+      ...rest,
+      nombreCompleto: nombre_completo
     };
   }
 }

@@ -18,7 +18,7 @@ export class AuthService {
     // Buscar usuario por email (Supabase)
     const { data: user, error } = await this.supabase
       .from('usuarios')
-      .select('id, email, password, nombre_completo, username, permisos_globales')
+      .select('id, email, password, nombre_completo, username, permisos_globales, telefono, direccion, fecha_inicio')
       .eq('email', email)
       .single();
 
@@ -65,7 +65,16 @@ export class AuthService {
     };
     return {
       access_token: this.jwtService.sign(payload),
-      user, // El usuario devuelto ahora incluye nombre_completo y permisos_globales resueltos
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        nombreCompleto: user.nombre_completo,
+        telefono: user.telefono,
+        direccion: user.direccion,
+        fecha_inicio: user.fecha_inicio,
+        permisos_globales: user.permisos_globales || []
+      },
     };
   }
 
@@ -108,6 +117,8 @@ export class AuthService {
     if (error) {
       throw new UnauthorizedException(error.message);
     }
+
+    
 
     return newUser;
   }

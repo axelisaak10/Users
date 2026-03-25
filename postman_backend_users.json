@@ -1,0 +1,112 @@
+{
+        "info": {
+                "name": "Backend Users API",
+                "description": "Colección de Postman para el proyecto NestJS de autenticación de usuarios y permisos sobre Supabase.",
+                "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+        },
+        "item": [
+                {
+                        "name": "1. Login Usuarios",
+                        "request": {
+                                "method": "POST",
+                                "header": [
+                                        {
+                                                "key": "Content-Type",
+                                                "value": "application/json"
+                                        }
+                                ],
+                                "body": {
+                                        "mode": "raw",
+                                        "raw": "{\r\n    \"email\": \"admin@marher.com\",\r\n    \"password\": \"password\"\r\n}"
+                                },
+                                "url": {
+                                        "raw": "http://localhost:3000/login",
+                                        "protocol": "http",
+                                        "host": [
+                                                "localhost"
+                                        ],
+                                        "port": "3000",
+                                        "path": [
+                                                "login"
+                                        ]
+                                },
+                                "description": "Envía las credenciales y devuelve una cookie (`Authentication`) con el JSON Web Token integrado."
+                        }
+                },
+                {
+                        "name": "2. Crear Usuario Normal",
+                        "request": {
+                                "method": "POST",
+                                "header": [
+                                        {
+                                                "key": "Content-Type",
+                                                "value": "application/json"
+                                        }
+                                ],
+                                "body": {
+                                        "mode": "raw",
+                                        "raw": "{\n  \"nombreCompleto\": \"Juan Perez\",\n  \"username\": \"jperez\",\n  \"email\": \"juan.perez@marher.com\",\n  \"password\": \"secreto123\"\n}"
+                                },
+                                "url": {
+                                        "raw": "http://localhost:3000/users",
+                                        "protocol": "http",
+                                        "host": [
+                                                "localhost"
+                                        ],
+                                        "port": "3000",
+                                        "path": [
+                                                "users"
+                                        ]
+                                },
+                                "description": "Crea a un nuevo usuario aplicando JSONSCHEMA sobre la contraseña y unicidad de correo. Requiere realizar el login previo para que Postman mande la Cookie JWT requerida."
+                        }
+                },
+                {
+                        "name": "3. Obtener Permisos",
+                        "request": {
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                        "raw": "http://localhost:3000/permissions",
+                                        "protocol": "http",
+                                        "host": [
+                                                "localhost"
+                                        ],
+                                        "port": "3000",
+                                        "path": [
+                                                "permissions"
+                                        ]
+                                },
+                                "description": "Consultar desde el cliente Angular (o aquí) la lista de permisos globales de acuerdo al usuario que está logueado en la Cookie JWT."
+                        }
+                },
+                {
+                        "name": "4. Registro Público (Normal)",
+                        "request": {
+                                "method": "POST",
+                                "header": [
+                                        {
+                                                "key": "Content-Type",
+                                                "value": "application/json"
+                                        }
+                                ],
+                                "body": {
+                                        "mode": "raw",
+                                        "raw": "{\n  \"nombreCompleto\": \"Usuario Público\",\n  \"username\": \"publico\",\n  \"email\": \"publico@correo.com\",\n  \"password\": \"secreto123\",\n  \"direccion\": \"123 Calle Principal, Ciudad\",\n  \"telefono\": \"+1234567890\"\n}"
+                                },
+                                "url": {
+                                        "raw": "http://localhost:3000/register",
+                                        "protocol": "http",
+                                        "host": [
+                                                "localhost"
+                                        ],
+                                        "port": "3000",
+                                        "path": [
+                                                "register"
+                                        ]
+                                },
+                                "description": "Registro público de un usuario normal a la plataforma. No requiere estar logueado previamente (sin JWT)."
+                        }
+                }
+        ]
+}

@@ -31,4 +31,9 @@ export class RegisterDto {
   @IsString()
   @IsOptional()
   telefono?: string;
+
+  @ApiPropertyOptional({ example: '1995-12-31', description: 'Fecha de nacimiento' })
+  @IsString()
+  @IsOptional()
+  fecha_nacimiento?: string;
 }

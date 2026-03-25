@@ -18,7 +18,7 @@ export class AuthService {
     // Buscar usuario por email (Supabase)
     const { data: user, error } = await this.supabase
       .from('usuarios')
-      .select('id, email, password, nombre_completo, username, permisos_globales, telefono, direccion, fecha_inicio')
+      .select('id, email, password, nombre_completo, username, permisos_globales, telefono, direccion, fecha_inicio, fecha_nacimiento, last_login')
       .eq('email', email)
       .single();
 
@@ -63,6 +63,10 @@ export class AuthService {
       nombreCompleto: user.nombre_completo,
       permisos_globales: user.permisos_globales || []
     };
+
+    const nowStamp = new Date().toISOString();
+    await this.supabase.from('usuarios').update({ last_login: nowStamp }).eq('id', user.id);
+
     return {
       access_token: this.jwtService.sign(payload),
       user: {
@@ -73,13 +77,15 @@ export class AuthService {
         telefono: user.telefono,
         direccion: user.direccion,
         fecha_inicio: user.fecha_inicio,
+        fecha_nacimiento: user.fecha_nacimiento,
+        last_login: nowStamp,
         permisos_globales: user.permisos_globales || []
       },
     };
   }
 
   async register(registerDto: RegisterDto) {
-    const { nombreCompleto, username, email, password, direccion, telefono } = registerDto;
+    const { nombreCompleto, username, email, password, direccion, telefono, fecha_nacimiento } = registerDto;
 
     // Check if user exists
     const { data: existingUsers } = await this.supabase
@@ -109,6 +115,7 @@ export class AuthService {
           direccion: direccion || null,
           telefono: telefono || null,
           fecha_inicio: dt,
+          fecha_nacimiento: fecha_nacimiento || null,
         },
       ])
       .select('id, nombre_completo, username, email, creado_en')

@@ -32,6 +32,11 @@ export class UpdateProfileDto {
   @IsOptional()
   fecha_inicio?: string;
 
+  @ApiPropertyOptional({ example: '1995-12-31' })
+  @IsString()
+  @IsOptional()
+  fecha_nacimiento?: string;
+
   @ApiPropertyOptional({ description: 'Optional new password' })
   @IsString()
   @IsOptional()

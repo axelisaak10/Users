@@ -32,6 +32,11 @@ export class CreateUserDto {
   @IsOptional()
   direccion?: string;
 
+  @ApiPropertyOptional({ example: '1995-12-31' })
+  @IsString()
+  @IsOptional()
+  fecha_nacimiento?: string;
+
   @ApiPropertyOptional({
     description: 'Nombres de permisos asignados. Se validarán en BD.',
     example: ['user:view', 'user:add'],

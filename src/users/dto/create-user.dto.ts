@@ -17,5 +17,4 @@ export class CreateUserDto {
   @MinLength(6)
   password: string;
 
-  // Los demás campos como dirección, teléfono, etc., pueden añadirse si son requeridos
 }

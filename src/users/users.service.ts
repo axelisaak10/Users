@@ -10,7 +10,6 @@ export class UsersService {
   async create(createUserDto: CreateUserDto) {
     const { nombreCompleto, username, email, password } = createUserDto;
 
-    // Check if user exists
     const { data: existingUsers } = await this.supabase
       .from('usuarios')
       .select('id')
@@ -21,10 +20,8 @@ export class UsersService {
       throw new ConflictException('Email or username already in use');
     }
 
-    // Hash user password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Default values for required fields like fecha_inicio
     const dt = new Date().toISOString().split('T')[0];
 
     const { data: newUser, error } = await this.supabase

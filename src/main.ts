@@ -6,6 +6,12 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  
+  app.enableCors({
+    origin: ['http://localhost:4200', 'https://front-end-siae.vercel.app'],
+    credentials: true,
+  });
+
   app.use(cookieParser());
   
   app.useGlobalPipes(

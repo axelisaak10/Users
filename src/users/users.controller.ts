@@ -10,7 +10,6 @@ export class UsersController {
   @UseGuards(JwtAuthGuard)
   @Post('users')
   create(@Body() createUserDto: CreateUserDto) {
-    // Only logged in user can access this due to JwtAuthGuard
     return this.usersService.create(createUserDto);
   }
 

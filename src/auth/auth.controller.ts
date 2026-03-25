@@ -15,11 +15,11 @@ export class AuthController {
     const user = await this.authService.validateUser(loginDto);
     const { access_token, user: userData } = await this.authService.login(user);
 
-    // Configurar cookie http-only
     response.cookie('Authentication', access_token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      maxAge: 1000 * 60 * 60 * 24, // 1 dia
+      secure: true,
+      sameSite: 'none',
+      maxAge: 1000 * 60 * 60 * 24, 
     });
 
     return userData;
@@ -28,7 +28,6 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @Post('register')
   async register(@Body() registerDto: RegisterDto) {
-    // Registro público de usuarios normales
     return this.authService.register(registerDto);
   }
 }

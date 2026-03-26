@@ -199,8 +199,10 @@ export class UsersService {
       return { permissions: [] };
     }
 
+    const permNames = await this.resolvePermissionNames(data.permisos_globales || []);
+
     return {
-      permissions: data.permisos_globales || [],
+      permissions: permNames,
     };
   }
 

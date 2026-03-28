@@ -60,7 +60,7 @@ export class AuthService {
       sub: user.id, 
       email: user.email, 
       username: user.username,
-      nombreCompleto: user.nombre_completo,
+      nombre_completo: user.nombre_completo,
       permisos_globales: user.permisos_globales || []
     };
 
@@ -73,7 +73,7 @@ export class AuthService {
         id: user.id,
         email: user.email,
         username: user.username,
-        nombreCompleto: user.nombre_completo,
+        nombre_completo: user.nombre_completo,
         telefono: user.telefono,
         direccion: user.direccion,
         fecha_inicio: user.fecha_inicio,
@@ -85,7 +85,17 @@ export class AuthService {
   }
 
   async register(registerDto: RegisterDto) {
-    const { nombreCompleto, username, email, password, direccion, telefono, fecha_nacimiento } = registerDto;
+    const { 
+      nombre_completo, 
+      username, 
+      email, 
+      password, 
+      direccion, 
+      telefono, 
+      fecha_nacimiento,
+      fecha_inicio,
+      permisos_globales 
+    } = registerDto;
 
     // Check if user exists
     const { data: existingUsers } = await this.supabase
@@ -101,24 +111,25 @@ export class AuthService {
     // Hash user password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Default values for required fields like fecha_inicio
-    const dt = new Date().toISOString().split('T')[0];
+    // Use fecha_inicio from DTO or default to current date
+    const resolved_fecha_inicio = fecha_inicio || new Date().toISOString().split('T')[0];
 
     const { data: newUser, error } = await this.supabase
       .from('usuarios')
       .insert([
         {
-          nombre_completo: nombreCompleto,
+          nombre_completo,
           username,
           email,
           password: hashedPassword,
           direccion: direccion || null,
           telefono: telefono || null,
-          fecha_inicio: dt,
+          fecha_inicio: resolved_fecha_inicio,
           fecha_nacimiento: fecha_nacimiento || null,
+          permisos_globales: permisos_globales && permisos_globales.length > 0 ? permisos_globales : null,
         },
       ])
-      .select('id, nombre_completo, username, email, creado_en')
+      .select('id, nombre_completo, username, email, direccion, telefono, fecha_nacimiento, fecha_inicio, permisos_globales, creado_en')
       .single();
 
     if (error) {

@@ -3,6 +3,9 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { UnwrapperPipe } from './common/pipes/unwrapper.pipe';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -15,12 +18,16 @@ async function bootstrap() {
   app.use(cookieParser());
   
   app.useGlobalPipes(
+    new UnwrapperPipe(), // Primero desempaquetamos si es necesario
     new ValidationPipe({
       whitelist: true,
       forbidNonWhitelisted: true,
       transform: true,
     }),
   );
+
+  app.useGlobalInterceptors(new TransformInterceptor());
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   const config = new DocumentBuilder()
     .setTitle('Authentication API')

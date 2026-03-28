@@ -1,39 +1,62 @@
-import { IsEmail, IsNotEmpty, IsString, MinLength, IsOptional } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsString, MinLength, IsOptional, Matches, MaxLength, IsArray, IsUUID } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class RegisterDto {
-  @ApiProperty({ example: 'Juan Perez', description: 'Nombre completo' })
+  @ApiProperty({ example: 'Juan Perez', description: 'Full name of the user' })
   @IsString()
   @IsNotEmpty()
-  nombreCompleto: string;
+  @MinLength(1)
+  @MaxLength(255)
+  nombre_completo: string;
 
-  @ApiProperty({ example: 'juanp', description: 'Nombre de usuario único' })
+  @ApiProperty({ example: 'juanp', description: 'Unique username for login' })
   @IsString()
   @IsNotEmpty()
+  @MinLength(3)
+  @MaxLength(50)
+  @Matches(/^[a-zA-Z0-9_-]+$/)
   username: string;
 
-  @ApiProperty({ example: 'juan@correo.com', description: 'Correo electrónico' })
+  @ApiProperty({ example: 'juan@correo.com', description: 'User email address' })
   @IsEmail()
+  @MaxLength(255)
   email: string;
 
-  @ApiProperty({ example: 'Password123!', description: 'Contraseña segura' })
+  @ApiProperty({ example: 'Password123!', description: 'User password' })
   @IsString()
   @IsNotEmpty()
-  @MinLength(6)
+  @MinLength(8)
   password: string;
 
-  @ApiPropertyOptional({ example: 'Calle Falsa 123', description: 'Dirección física' })
+  @ApiProperty({ example: 'Calle Falsa 123', description: 'User address' })
   @IsString()
-  @IsOptional()
-  direccion?: string;
+  @IsNotEmpty()
+  @MinLength(1)
+  direccion: string;
 
-  @ApiPropertyOptional({ example: '+525555555555', description: 'Teléfono de contacto' })
+  @ApiProperty({ example: '+525555555555', description: 'Phone number' })
   @IsString()
-  @IsOptional()
-  telefono?: string;
+  @IsNotEmpty()
+  @MinLength(1)
+  @MaxLength(20)
+  @Matches(/^[0-9+\-\s()]+$/)
+  telefono: string; 
 
-  @ApiPropertyOptional({ example: '1995-12-31', description: 'Fecha de nacimiento' })
+  @ApiProperty({ example: '1995-12-31', description: 'Date of birth' })
   @IsString()
+  @IsNotEmpty()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  fecha_nacimiento: string;
+
+  @ApiProperty({ example: '2024-03-25', description: 'Start date of the user' })
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/)
+  fecha_inicio: string;
+
+  @ApiPropertyOptional({ example: ['uuid-1', 'uuid-2'], description: 'Array of global permission UUIDs' })
+  @IsArray()
+  @IsUUID('all', { each: true })
   @IsOptional()
-  fecha_nacimiento?: string;
+  permisos_globales?: string[];
 }

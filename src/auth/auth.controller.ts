@@ -22,10 +22,12 @@ export class AuthController {
       maxAge: 1000 * 60 * 60 * 24, 
     });
 
-    return userData;
+    return {
+      access_token,
+      ...userData
+    };
   }
 
-  @UseGuards(JwtAuthGuard)
   @Post('register')
   async register(@Body() registerDto: RegisterDto) {
     return this.authService.register(registerDto);

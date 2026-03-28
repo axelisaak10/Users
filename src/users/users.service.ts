@@ -29,11 +29,20 @@ export class UsersService {
     return data ? data.map(p => p.id) : [];
   }
 
-  // ═══════════════════════════════════════════════════════════
   // POST /users — Crear usuario (admin)
   // ═══════════════════════════════════════════════════════════
   async create(createUserDto: CreateUserDto) {
-    const { nombreCompleto, username, email, password, telefono, direccion, permisos, fecha_nacimiento } = createUserDto;
+    const { 
+      nombre_completo, 
+      username, 
+      email, 
+      password, 
+      telefono, 
+      direccion, 
+      permisos_globales, 
+      fecha_nacimiento,
+      fecha_inicio 
+    } = createUserDto;
 
     const { data: existingUsers } = await this.supabase
       .from('usuarios')
@@ -46,25 +55,24 @@ export class UsersService {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const dt = new Date().toISOString().split('T')[0];
-    const permisos_globales = await this.resolvePermissionIds(permisos || []);
+    const resolved_fecha_inicio = fecha_inicio || new Date().toISOString().split('T')[0];
 
     const { data: newUser, error } = await this.supabase
       .from('usuarios')
       .insert([
         {
-          nombre_completo: nombreCompleto,
+          nombre_completo,
           username,
           email,
           password: hashedPassword,
           telefono: telefono || null,
           direccion: direccion || null,
-          fecha_inicio: dt,
+          fecha_inicio: resolved_fecha_inicio,
           fecha_nacimiento: fecha_nacimiento || null,
-          permisos_globales: permisos_globales.length > 0 ? permisos_globales : null,
+          permisos_globales: permisos_globales && permisos_globales.length > 0 ? permisos_globales : null,
         },
       ])
-      .select('id, nombre_completo, username, email, creado_en')
+      .select('id, nombre_completo, username, email, direccion, telefono, fecha_nacimiento, fecha_inicio, permisos_globales, creado_en')
       .single();
 
     if (error) {
@@ -91,10 +99,10 @@ export class UsersService {
     const result = await Promise.all(
       (users || []).map(async (user) => {
         const permNames = await this.resolvePermissionNames(user.permisos_globales || []);
-        const { nombre_completo, permisos_globales, ...rest } = user;
+        const { nombre_completo: nc, permisos_globales: pg, ...rest } = user;
         return {
           ...rest,
-          nombreCompleto: nombre_completo,
+          nombre_completo: nc,
           permisos_globales: permNames,
         };
       })
@@ -107,7 +115,16 @@ export class UsersService {
   // PATCH /users/:id — Editar cualquier usuario (admin)
   // ═══════════════════════════════════════════════════════════
   async updateUser(userId: string, updateUserDto: UpdateUserDto) {
-    const { nombreCompleto, username, email, password, telefono, direccion, fecha_nacimiento, permisos } = updateUserDto;
+    const { 
+      nombre_completo, 
+      username, 
+      email, 
+      password, 
+      telefono, 
+      direccion, 
+      fecha_nacimiento, 
+      permisos_globales 
+    } = updateUserDto;
 
     // Validar duplicados excluyendo al usuario actual
     if (email || username) {
@@ -129,7 +146,7 @@ export class UsersService {
     }
 
     const updates: any = {};
-    if (nombreCompleto) updates.nombre_completo = nombreCompleto;
+    if (nombre_completo) updates.nombre_completo = nombre_completo;
     if (username) updates.username = username;
     if (email) updates.email = email;
     if (telefono !== undefined) updates.telefono = telefono;
@@ -140,9 +157,9 @@ export class UsersService {
       updates.password = await bcrypt.hash(password, 10);
     }
 
-    // Resolver permisos de strings a UUIDs
-    if (permisos) {
-      updates.permisos_globales = await this.resolvePermissionIds(permisos);
+    // Usar permisos_globales (UUIDs) directamente
+    if (permisos_globales) {
+      updates.permisos_globales = permisos_globales;
     }
 
     const { data, error } = await this.supabase
@@ -161,10 +178,10 @@ export class UsersService {
     }
 
     const permNames = await this.resolvePermissionNames(data.permisos_globales || []);
-    const { nombre_completo, permisos_globales, ...rest } = data;
+    const { nombre_completo: nc, permisos_globales: pg, ...rest } = data;
     return {
       ...rest,
-      nombreCompleto: nombre_completo,
+      nombre_completo: nc,
       permisos_globales: permNames,
     };
   }
@@ -210,7 +227,7 @@ export class UsersService {
   // PATCH /users/profile — Editar perfil propio
   // ═══════════════════════════════════════════════════════════
   async updateProfile(userId: string, updateProfileDto: UpdateProfileDto) {
-    const { nombreCompleto, username, email, password, telefono, direccion, fecha_inicio, fecha_nacimiento } = updateProfileDto;
+    const { nombre_completo, username, email, password, telefono, direccion, fecha_inicio, fecha_nacimiento } = updateProfileDto;
     
     if (email || username) {
       const orConditions: string[] = [];
@@ -231,7 +248,7 @@ export class UsersService {
     }
 
     const updates: any = {};
-    if (nombreCompleto) updates.nombre_completo = nombreCompleto;
+    if (nombre_completo) updates.nombre_completo = nombre_completo;
     if (username) updates.username = username;
     if (email) updates.email = email;
     if (telefono !== undefined) updates.telefono = telefono;
@@ -254,10 +271,10 @@ export class UsersService {
       throw new InternalServerErrorException(error.message);
     }
 
-    const { nombre_completo, ...rest } = data;
+    const { nombre_completo: nc, ...rest } = data;
     return {
       ...rest,
-      nombreCompleto: nombre_completo
+      nombre_completo: nc
     };
   }
 }

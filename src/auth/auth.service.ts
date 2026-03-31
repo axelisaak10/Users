@@ -1,9 +1,19 @@
-import { Injectable, Inject, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  Inject,
+  UnauthorizedException,
+  ForbiddenException,
+  ConflictException,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { SupabaseClient } from '@supabase/supabase-js';
 import * as bcrypt from 'bcrypt';
-import { LoginDto } from './dto/login.dto';
-import { RegisterDto } from './dto/register.dto';
+import {
+  LoginDto,
+  RegisterDto,
+  UpdateProfileDto,
+} from './dto/update-profile.dto';
 
 @Injectable()
 export class AuthService {
@@ -12,132 +22,203 @@ export class AuthService {
     private jwtService: JwtService,
   ) {}
 
-  async validateUser(loginDto: LoginDto): Promise<any> {
-    const { email, password } = loginDto;
+  private async resolvePermisos(permisosIds: string[]): Promise<string[]> {
+    if (!permisosIds || permisosIds.length === 0) return [];
+    const { data } = await this.supabase
+      .from('permisos')
+      .select('nombre')
+      .in('id', permisosIds);
+    return data?.map((p) => p.nombre) || [];
+  }
 
-    // Buscar usuario por email (Supabase)
-    const { data: user, error } = await this.supabase
+  private async getUserPermisosFromBd(userId: string): Promise<string[]> {
+    const { data: user } = await this.supabase
       .from('usuarios')
-      .select('id, email, password, nombre_completo, username, permisos_globales, telefono, direccion, fecha_inicio, fecha_nacimiento, last_login')
-      .eq('email', email)
+      .select('permisos_globales')
+      .eq('id', userId)
       .single();
 
-    if (error || !user) {
-      throw new UnauthorizedException('Credenciales inválidas');
-    }
-    
-    // Comparar hashes con bcrypt
+    if (!user) return [];
+    return this.resolvePermisos(user.permisos_globales || []);
+  }
+
+  async validateUser(loginDto: LoginDto) {
+    const { email, password } = loginDto;
+    const { data: user, error } = await this.supabase
+      .from('usuarios')
+      .select('id, password, permisos_globales')
+      .eq('email', email)
+      .single();
+    if (error || !user)
+      throw new UnauthorizedException('Credenciales invalidas');
+
     const isMatched = await bcrypt.compare(password, user.password);
-    
-    if (!isMatched) {
-      throw new UnauthorizedException('Credenciales inválidas');
-    }
+    if (!isMatched) throw new UnauthorizedException('Credenciales invalidas');
 
-    let permisosSet = new Set<string>();
+    const permisosNombres = await this.resolvePermisos(
+      user.permisos_globales || [],
+    );
 
-    // 1. Obtener nombres de permisos globales directos
-    if (user.permisos_globales && Array.isArray(user.permisos_globales) && user.permisos_globales.length > 0) {
-      const { data: globalPerms } = await this.supabase
-        .from('permisos')
-        .select('nombre')
-        .in('id', user.permisos_globales);
-      
-      if (globalPerms) {
-        globalPerms.forEach(p => permisosSet.add(p.nombre));
-      }
-    }
-
-    // Guardar los nombres de los permisos en el usuario (excluyendo campos sensibles)
-    const { password: _, permisos_globales: __, ...userWithoutPassword } = user;
     return {
-      ...userWithoutPassword,
-      permisos_globales: Array.from(permisosSet),
+      id: user.id,
+      permisos_globales: permisosNombres,
     };
   }
 
   async login(user: any) {
-    const payload = { 
-      sub: user.id, 
-      email: user.email, 
-      username: user.username,
-      nombre_completo: user.nombre_completo,
-      permisos_globales: user.permisos_globales || []
+    const payload = {
+      sub: user.id,
+      permisos_globales: user.permisos_globales,
     };
 
     const nowStamp = new Date().toISOString();
-    await this.supabase.from('usuarios').update({ last_login: nowStamp }).eq('id', user.id);
+    await this.supabase
+      .from('usuarios')
+      .update({ last_login: nowStamp })
+      .eq('id', user.id);
 
     return {
       access_token: this.jwtService.sign(payload),
-      user: {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        nombre_completo: user.nombre_completo,
-        telefono: user.telefono,
-        direccion: user.direccion,
-        fecha_inicio: user.fecha_inicio,
-        fecha_nacimiento: user.fecha_nacimiento,
-        last_login: nowStamp,
-        permisos_globales: user.permisos_globales || []
-      },
+      id: user.id,
+      permisos_globales: user.permisos_globales,
     };
   }
 
   async register(registerDto: RegisterDto) {
-    const { 
-      nombre_completo, 
-      username, 
-      email, 
-      password, 
-      direccion, 
-      telefono, 
+    const {
+      nombre_completo,
+      username,
+      email,
+      password,
+      direccion,
+      telefono,
       fecha_nacimiento,
       fecha_inicio,
-      permisos_globales 
     } = registerDto;
 
-    // Check if user exists
-    const { data: existingUsers } = await this.supabase
+    const { data: exist } = await this.supabase
       .from('usuarios')
       .select('id')
       .or(`email.eq.${email},username.eq.${username}`)
       .limit(1);
+    if (exist?.length)
+      throw new UnauthorizedException('Email o usuario ya existen');
 
-    if (existingUsers && existingUsers.length > 0) {
-      throw new UnauthorizedException('Email or username already in use');
-    }
-
-    // Hash user password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Use fecha_inicio from DTO or default to current date
-    const resolved_fecha_inicio = fecha_inicio || new Date().toISOString().split('T')[0];
+    const { error } = await this.supabase.from('usuarios').insert([
+      {
+        nombre_completo,
+        username,
+        email,
+        password: hashedPassword,
+        direccion: direccion || null,
+        telefono: telefono || null,
+        fecha_inicio: fecha_inicio || new Date().toISOString().split('T')[0],
+        fecha_nacimiento: fecha_nacimiento || null,
+      },
+    ]);
 
-    const { data: newUser, error } = await this.supabase
+    if (error) throw new UnauthorizedException(error.message);
+
+    return { message: 'Usuario registrado exitosamente', email, username };
+  }
+
+  async getProfile(userId: string) {
+    const { data: user, error } = await this.supabase
       .from('usuarios')
-      .insert([
-        {
-          nombre_completo,
-          username,
-          email,
-          password: hashedPassword,
-          direccion: direccion || null,
-          telefono: telefono || null,
-          fecha_inicio: resolved_fecha_inicio,
-          fecha_nacimiento: fecha_nacimiento || null,
-          permisos_globales: permisos_globales && permisos_globales.length > 0 ? permisos_globales : null,
-        },
-      ])
-      .select('id, nombre_completo, username, email, direccion, telefono, fecha_nacimiento, fecha_inicio, permisos_globales, creado_en')
+      .select(
+        'id, nombre_completo, username, email, telefono, direccion, fecha_inicio, fecha_nacimiento, last_login, permisos_globales, creado_en',
+      )
+      .eq('id', userId)
+      .single();
+
+    if (error || !user)
+      throw new UnauthorizedException('Usuario no encontrado');
+
+    const permisosNombres = await this.resolvePermisos(
+      user.permisos_globales || [],
+    );
+
+    if (!permisosNombres.includes('user:profile:view')) {
+      throw new ForbiddenException('Permiso denegado: user:profile:view');
+    }
+
+    return {
+      id: user.id,
+      nombre_completo: user.nombre_completo,
+      username: user.username,
+      email: user.email,
+      telefono: user.telefono,
+      direccion: user.direccion,
+      fecha_inicio: user.fecha_inicio,
+      fecha_nacimiento: user.fecha_nacimiento,
+      last_login: user.last_login,
+      creado_en: user.creado_en,
+      permisos_globales: permisosNombres,
+    };
+  }
+
+  async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const { data: user } = await this.supabase
+      .from('usuarios')
+      .select('permisos_globales')
+      .eq('id', userId)
+      .single();
+
+    if (!user) throw new UnauthorizedException('Usuario no encontrado');
+
+    const permisosNombres = await this.resolvePermisos(
+      user.permisos_globales || [],
+    );
+
+    if (!permisosNombres.includes('user:profile:edit')) {
+      throw new ForbiddenException('Permiso denegado: user:profile:edit');
+    }
+
+    if (dto.email || dto.username) {
+      const orConditions: string[] = [];
+      if (dto.email) orConditions.push(`email.eq.${dto.email}`);
+      if (dto.username) orConditions.push(`username.eq.${dto.username}`);
+      if (orConditions.length > 0) {
+        const { data: existing } = await this.supabase
+          .from('usuarios')
+          .select('id')
+          .neq('id', userId)
+          .or(orConditions.join(','));
+        if (existing && existing.length > 0) {
+          throw new ConflictException(
+            'El correo o nombre de usuario ya esta siendo usado por otra cuenta',
+          );
+        }
+      }
+    }
+
+    const updates: any = {};
+    if (dto.nombre_completo) updates.nombre_completo = dto.nombre_completo;
+    if (dto.username) updates.username = dto.username;
+    if (dto.email) updates.email = dto.email;
+    if (dto.telefono !== undefined) updates.telefono = dto.telefono;
+    if (dto.direccion !== undefined) updates.direccion = dto.direccion;
+    if (dto.fecha_inicio) updates.fecha_inicio = dto.fecha_inicio;
+    if (dto.fecha_nacimiento !== undefined)
+      updates.fecha_nacimiento = dto.fecha_nacimiento;
+    if (dto.password) {
+      updates.password = await bcrypt.hash(dto.password, 10);
+    }
+
+    const { data, error } = await this.supabase
+      .from('usuarios')
+      .update(updates)
+      .eq('id', userId)
+      .select(
+        'id, nombre_completo, username, email, telefono, direccion, fecha_inicio, fecha_nacimiento',
+      )
       .single();
 
     if (error) {
-      throw new UnauthorizedException(error.message);
+      throw new InternalServerErrorException(error.message);
     }
-
-    
-
-    return newUser;
+    return data;
   }
 }

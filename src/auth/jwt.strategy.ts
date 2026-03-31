@@ -8,23 +8,23 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(configService: ConfigService) {
     super({
       jwtFromRequest: ExtractJwt.fromExtractors([
-        (request: any) => {
-          const data = request?.cookies?.Authentication;
-          if (!data) {
-            return null;
-          }
-          return data;
-        },
+        (request: any) => request?.cookies?.Authentication || null,
       ]),
       ignoreExpiration: false,
-      secretOrKey: configService.get<string>('JWT_SECRET', 'super-secret-jwt-key'),
+      secretOrKey: configService.get<string>(
+        'JWT_SECRET',
+        'super-secret-jwt-key',
+      ),
     });
   }
 
   async validate(payload: any) {
-    if (!payload.sub || !payload.email) {
+    if (!payload.sub) {
       throw new UnauthorizedException('Token contains incomplete payload.');
     }
-    return { id: payload.sub, email: payload.email, username: payload.username };
+    return {
+      id: payload.sub,
+      permisos_globales: payload.permisos_globales || [],
+    };
   }
 }

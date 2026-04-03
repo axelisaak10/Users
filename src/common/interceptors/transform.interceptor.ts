@@ -9,14 +9,15 @@ import { map } from 'rxjs/operators';
 
 export interface Response<T> {
   statusCode: number;
-  intOpCode: number;
+  intOpCode: string;
   data: T[];
 }
 
 @Injectable()
-export class TransformInterceptor<T>
-  implements NestInterceptor<T, Response<T>>
-{
+export class TransformInterceptor<T> implements NestInterceptor<
+  T,
+  Response<T>
+> {
   intercept(
     context: ExecutionContext,
     next: CallHandler,
@@ -26,12 +27,11 @@ export class TransformInterceptor<T>
 
     return next.handle().pipe(
       map((data) => {
-        // Si data ya es un array, lo dejamos como está, si no, lo envolvemos en uno
         const finalData = Array.isArray(data) ? data : data ? [data] : [];
-        
+
         return {
           statusCode: statusCode,
-          intOpCode: 0,
+          intOpCode: `microservicio-users${statusCode}`,
           data: finalData,
         };
       }),

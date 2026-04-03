@@ -24,8 +24,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       throw new UnauthorizedException('Token contains incomplete payload.');
     }
     return {
-      id: payload.sub,
+      sub: payload.sub,
       permisos_globales: payload.permisos_globales || [],
+      jti: payload.jti,
     };
   }
 }

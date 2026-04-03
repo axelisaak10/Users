@@ -3,8 +3,11 @@ import {
   CanActivate,
   ExecutionContext,
   ForbiddenException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { PermissionVerifyService } from './services/permission-verify.service';
 
 export const PERMISOS_KEY = 'permisos';
 export const Permisos =
@@ -16,16 +19,18 @@ export const Permisos =
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+  constructor(
+    private reflector: Reflector,
+    @Inject(forwardRef(() => PermissionVerifyService))
+    private permissionVerify: PermissionVerifyService,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
 
-    if (!user || !user.permisos_globales) {
-      throw new ForbiddenException(
-        'No tienes permisos para realizar esta accion',
-      );
+    if (!user || !user.sub) {
+      throw new ForbiddenException('Usuario no autenticado');
     }
 
     const requiredPermisos = this.reflector.getAllAndOverride<string[]>(
@@ -37,14 +42,15 @@ export class PermissionsGuard implements CanActivate {
       return true;
     }
 
-    const hasPermission = requiredPermisos.every((perm) =>
-      user.permisos_globales.includes(perm),
-    );
-
-    if (!hasPermission) {
-      throw new ForbiddenException(
-        'No tienes el permiso necesario: ' + requiredPermisos.join(', '),
+    for (const permission of requiredPermisos) {
+      const hasPermission = await this.permissionVerify.hasPermission(
+        user.sub,
+        permission,
       );
+
+      if (!hasPermission) {
+        throw new ForbiddenException(`Permiso denegado: ${permission}`);
+      }
     }
 
     return true;

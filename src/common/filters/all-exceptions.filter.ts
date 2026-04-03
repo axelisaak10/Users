@@ -24,13 +24,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
         : 'Internal server error';
 
     // Normalizar el mensaje de error
-    const errorData = typeof message === 'string' 
-      ? { message } 
-      : (message as any);
+    const errorData =
+      typeof message === 'string' ? { message } : (message as any);
 
     response.status(status).json({
       statusCode: status,
-      intOpCode: 1, // Usamos 1 para indicar error
+      intOpCode: `microservicio-users${status}`,
       data: [
         {
           timestamp: new Date().toISOString(),

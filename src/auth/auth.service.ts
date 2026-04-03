@@ -9,17 +9,22 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import { SupabaseClient } from '@supabase/supabase-js';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import {
   LoginDto,
   RegisterDto,
   UpdateProfileDto,
 } from './dto/update-profile.dto';
+import { BlacklistService } from './services/blacklist.service';
+import { RefreshTokenService } from './services/refresh-token.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     @Inject('SUPABASE_CLIENT') private supabase: SupabaseClient,
     private jwtService: JwtService,
+    private blacklistService: BlacklistService,
+    private refreshTokenService: RefreshTokenService,
   ) {}
 
   private async resolvePermisos(permisosIds: string[]): Promise<string[]> {
@@ -31,7 +36,7 @@ export class AuthService {
     return data?.map((p) => p.nombre) || [];
   }
 
-  private async getUserPermisosFromBd(userId: string): Promise<string[]> {
+  async getUserPermisosFromBd(userId: string): Promise<string[]> {
     const { data: user } = await this.supabase
       .from('usuarios')
       .select('permisos_globales')
@@ -40,6 +45,14 @@ export class AuthService {
 
     if (!user) return [];
     return this.resolvePermisos(user.permisos_globales || []);
+  }
+
+  async getCurrentPermissions(userId: string) {
+    const permisos = await this.getUserPermisosFromBd(userId);
+    return {
+      permisos_globales: permisos,
+      ultimo_actualizado: new Date().toISOString(),
+    };
   }
 
   async validateUser(loginDto: LoginDto) {
@@ -66,9 +79,11 @@ export class AuthService {
   }
 
   async login(user: any) {
+    const jti = crypto.randomUUID();
     const payload = {
       sub: user.id,
       permisos_globales: user.permisos_globales,
+      jti,
     };
 
     const nowStamp = new Date().toISOString();
@@ -77,11 +92,92 @@ export class AuthService {
       .update({ last_login: nowStamp })
       .eq('id', user.id);
 
+    const { data: userData } = await this.supabase
+      .from('usuarios')
+      .select(
+        'nombre_completo, username, email, telefono, direccion, fecha_nacimiento, fecha_inicio',
+      )
+      .eq('id', user.id)
+      .single();
+
+    const accessToken = this.jwtService.sign(payload);
+    const refreshToken = await this.refreshTokenService.generateRefreshToken(
+      user.id,
+    );
+
     return {
-      access_token: this.jwtService.sign(payload),
+      access_token: accessToken,
+      refresh_token: refreshToken,
       id: user.id,
+      nombre_completo: userData?.nombre_completo || '',
+      username: userData?.username || '',
+      email: userData?.email || '',
+      telefono: userData?.telefono || '',
+      direccion: userData?.direccion || '',
+      fecha_nacimiento: userData?.fecha_nacimiento || '',
+      fecha_inicio: userData?.fecha_inicio || '',
       permisos_globales: user.permisos_globales,
     };
+  }
+
+  async refreshAccessToken(refreshToken: string) {
+    const payload =
+      await this.refreshTokenService.verifyRefreshToken(refreshToken);
+
+    if (!payload) {
+      throw new UnauthorizedException('Refresh token inválido o expirado');
+    }
+
+    const { data: user, error } = await this.supabase
+      .from('usuarios')
+      .select('permisos_globales')
+      .eq('id', payload.sub)
+      .single();
+
+    if (error || !user) {
+      throw new UnauthorizedException('Usuario no encontrado');
+    }
+
+    const permisosNombres = await this.resolvePermisos(
+      user.permisos_globales || [],
+    );
+    const newJti = crypto.randomUUID();
+
+    const newPayload = {
+      sub: payload.sub,
+      permisos_globales: permisosNombres,
+      jti: newJti,
+    };
+
+    const accessToken = this.jwtService.sign(newPayload);
+    const newRefreshToken = await this.refreshTokenService.generateRefreshToken(
+      payload.sub,
+    );
+
+    return {
+      access_token: accessToken,
+      refresh_token: newRefreshToken,
+      id: payload.sub,
+      permisos_globales: permisosNombres,
+    };
+  }
+
+  async revokeToken(userId: string, jti: string) {
+    const decoded = this.jwtService.decode(jti);
+    let expiraEn: Date;
+
+    if (decoded && decoded.exp) {
+      expiraEn = new Date(decoded.exp * 1000);
+    } else {
+      const now = new Date();
+      now.setHours(now.getHours() + 1);
+      expiraEn = now;
+    }
+
+    await this.blacklistService.addToBlacklist(jti, expiraEn);
+    await this.refreshTokenService.revokeRefreshToken(userId);
+
+    return { message: 'Token invalidado exitosamente' };
   }
 
   async register(registerDto: RegisterDto) {
@@ -140,10 +236,6 @@ export class AuthService {
       user.permisos_globales || [],
     );
 
-    if (!permisosNombres.includes('user:profile:view')) {
-      throw new ForbiddenException('Permiso denegado: user:profile:view');
-    }
-
     return {
       id: user.id,
       nombre_completo: user.nombre_completo,
@@ -172,7 +264,10 @@ export class AuthService {
       user.permisos_globales || [],
     );
 
-    if (!permisosNombres.includes('user:profile:edit')) {
+    if (
+      !permisosNombres.includes('user:profile:edit') &&
+      !permisosNombres.includes('superadmin')
+    ) {
       throw new ForbiddenException('Permiso denegado: user:profile:edit');
     }
 

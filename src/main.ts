@@ -7,15 +7,20 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { UnwrapperPipe } from './common/pipes/unwrapper.pipe';
 import { JsonSchemaValidationPipe } from './common/pipes/json-schema-validation.pipe';
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
-  
+
   app.enableCors({
-    origin: ['http://localhost:4200','https://seguridad-theta.vercel.app', 'https://front-end-siae.vercel.app'],
+    origin: [
+      'http://localhost:4200',
+      'https://seguridad-theta.vercel.app',
+      'https://front-end-siae.vercel.app',
+    ],
     credentials: true,
   });
   app.use(cookieParser());
-  
+
   app.useGlobalPipes(
     new UnwrapperPipe(),
     new JsonSchemaValidationPipe(),
@@ -29,14 +34,16 @@ async function bootstrap() {
   app.useGlobalFilters(new AllExceptionsFilter());
   const config = new DocumentBuilder()
     .setTitle('Auth Microservice API')
-    .setDescription('Microservicio de autenticación con validación JSON Schema. Solo login/logout y gestión de permisos propios.')
+    .setDescription(
+      'Microservicio de autenticación con validación JSON Schema. Solo login/logout y gestión de permisos propios.',
+    )
     .setVersion('1.0')
     .addBearerAuth()
     .addTag('Auth', 'Operaciones de autenticación (login, logout, perfil)')
     .addTag('Users', 'Perfil del usuario logueado')
     .addTag('Permisos', 'Gestión de permisos del usuario logueado')
     .build();
-  
+
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api', app, document);
   await app.listen(process.env.PORT ?? 3444);

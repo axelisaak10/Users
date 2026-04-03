@@ -6,6 +6,8 @@ import {
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
+import { UsersController } from './users.controller';
+import { UsersService } from './users.service';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ConfigService, ConfigModule } from '@nestjs/config';
@@ -14,6 +16,7 @@ import { BlacklistService } from './services/blacklist.service';
 import { RefreshTokenService } from './services/refresh-token.service';
 import { PermissionVerifyService } from './services/permission-verify.service';
 import { AuthMiddleware } from './middleware/auth.middleware';
+import { EmailService } from './services/email.service';
 
 @Module({
   imports: [
@@ -27,9 +30,11 @@ import { AuthMiddleware } from './middleware/auth.middleware';
       }),
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, UsersController],
   providers: [
     AuthService,
+    UsersService,
+    EmailService,
     JwtStrategy,
     BlacklistService,
     RefreshTokenService,

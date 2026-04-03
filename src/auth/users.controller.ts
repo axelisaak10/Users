@@ -67,8 +67,8 @@ export class UsersController {
   @Post(':id/change-password')
   @HttpCode(HttpStatus.OK)
   async changePassword(@Param('id') id: string, @Req() req: any) {
-    const adminEmail = req.user?.email || 'admin@system.com';
-    return this.usersService.changePassword(id, adminEmail);
+    const adminId = req.user?.sub;
+    return this.usersService.changePassword(id, adminId);
   }
 
   @Post(':id/permissions')

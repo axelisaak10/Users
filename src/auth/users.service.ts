@@ -49,7 +49,11 @@ export class UsersService {
         const permisos = await this.resolvePermisos(
           user.permisos_globales || [],
         );
-        return { ...user, permisos_globales_nombres: permisos };
+        return {
+          ...user,
+          permisos_globales_detailed: permisos,
+          permisos_globales_nombres: permisos.map((p) => p.nombre),
+        };
       }),
     );
 
@@ -68,7 +72,11 @@ export class UsersService {
     if (error || !data) throw new NotFoundException('Usuario no encontrado');
 
     const permisos = await this.resolvePermisos(data.permisos_globales || []);
-    return { ...data, permisos_globales_nombres: permisos };
+    return {
+      ...data,
+      permisos_globales_detailed: permisos,
+      permisos_globales_nombres: permisos.map((p) => p.nombre),
+    };
   }
 
   async create(createUserDto: CreateUserDto, adminEmail: string) {
@@ -178,14 +186,22 @@ export class UsersService {
     return { message: 'Usuario eliminado correctamente' };
   }
 
-  async changePassword(id: string, adminEmail: string) {
+  async changePassword(id: string, adminId: string) {
     const { data: user } = await this.supabase
       .from('usuarios')
-      .select('email, nombre_completo')
+      .select('email, nombre_completo, username')
       .eq('id', id)
       .single();
 
     if (!user) throw new NotFoundException('Usuario no encontrado');
+
+    const { data: admin } = await this.supabase
+      .from('usuarios')
+      .select('nombre_completo')
+      .eq('id', adminId)
+      .single();
+
+    const adminName = admin?.nombre_completo || 'Administrador';
 
     const newPassword = crypto.randomBytes(5).toString('base64').slice(0, 10);
     const hashedPassword = await bcrypt.hash(newPassword, 10);
@@ -200,7 +216,8 @@ export class UsersService {
     const emailSent = await this.emailService.sendPasswordResetEmail(
       user.email,
       newPassword,
-      adminEmail,
+      adminName,
+      user.username,
     );
 
     return {
@@ -234,7 +251,8 @@ export class UsersService {
     const permisosNombres = await this.resolvePermisos(newPermisos);
     return {
       permisos_globales: newPermisos,
-      permisos_globales_nombres: permisosNombres,
+      permisos_globales_detailed: permisosNombres,
+      permisos_globales_nombres: permisosNombres.map((p) => p.nombre),
     };
   }
 
@@ -260,7 +278,8 @@ export class UsersService {
     const permisosNombres = await this.resolvePermisos(newPermisos);
     return {
       permisos_globales: newPermisos,
-      permisos_globales_nombres: permisosNombres,
+      permisos_globales_detailed: permisosNombres,
+      permisos_globales_nombres: permisosNombres.map((p) => p.nombre),
     };
   }
 
@@ -274,12 +293,20 @@ export class UsersService {
     return data;
   }
 
-  private async resolvePermisos(permisosIds: string[]): Promise<string[]> {
+  private async resolvePermisos(
+    permisosIds: string[],
+  ): Promise<{ id: string; nombre: string; descripcion: string }[]> {
     if (!permisosIds || permisosIds.length === 0) return [];
     const { data } = await this.supabase
       .from('permisos')
-      .select('nombre')
-      .in('id', permisosIds);
-    return data?.map((p) => p.nombre) || [];
+      .select('id, nombre, descripcion')
+      .in('nombre', permisosIds);
+    return (
+      data?.map((p) => ({
+        id: p.nombre,
+        nombre: p.nombre,
+        descripcion: p.descripcion || p.nombre,
+      })) || []
+    );
   }
 }

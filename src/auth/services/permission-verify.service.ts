@@ -47,7 +47,7 @@ export class PermissionVerifyService {
     const { data } = await this.supabase
       .from('permisos')
       .select('nombre')
-      .in('id', permisosIds);
+      .in('nombre', permisosIds);
 
     return data?.map((p) => p.nombre) || [];
   }

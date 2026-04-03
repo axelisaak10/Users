@@ -70,14 +70,13 @@ export class RegisterDto {
   @Matches(/^[0-9+\-\s()]*$/)
   telefono?: string;
 
-  @ApiPropertyOptional({
+  @ApiProperty({
     example: '1995-12-31',
     description: 'Fecha de nacimiento',
   })
   @IsString()
-  @IsOptional()
   @Matches(/^\d{4}-\d{2}-\d{2}$/)
-  fecha_nacimiento?: string;
+  fecha_nacimiento: string;
 
   @ApiProperty({ example: '2024-03-25', description: 'Fecha de inicio' })
   @IsString()

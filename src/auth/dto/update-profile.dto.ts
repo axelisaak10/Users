@@ -138,3 +138,13 @@ export class UpdateProfileDto {
   @MinLength(8)
   password?: string;
 }
+
+export class ForgotPasswordDto {
+  @ApiProperty({
+    example: 'usuario@correo.com',
+    description: 'Correo electronico del usuario',
+  })
+  @IsEmail()
+  @IsString()
+  email: string;
+}

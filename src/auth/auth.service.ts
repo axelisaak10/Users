@@ -14,9 +14,11 @@ import {
   LoginDto,
   RegisterDto,
   UpdateProfileDto,
+  ForgotPasswordDto,
 } from './dto/update-profile.dto';
 import { BlacklistService } from './services/blacklist.service';
 import { RefreshTokenService } from './services/refresh-token.service';
+import { EmailService } from './services/email.service';
 
 @Injectable()
 export class AuthService {
@@ -25,6 +27,7 @@ export class AuthService {
     private jwtService: JwtService,
     private blacklistService: BlacklistService,
     private refreshTokenService: RefreshTokenService,
+    private emailService: EmailService,
   ) {}
 
   private async resolvePermisos(permisosIds: string[]): Promise<string[]> {
@@ -315,5 +318,74 @@ export class AuthService {
       throw new InternalServerErrorException(error.message);
     }
     return data;
+  }
+
+  async forgotPassword(dto: ForgotPasswordDto) {
+    const { email } = dto;
+
+    const { data: user, error } = await this.supabase
+      .from('usuarios')
+      .select('id, username, email')
+      .eq('email', email.toLowerCase())
+      .single();
+
+    if (error || !user) {
+      return {
+        message: 'Se envió a su correo la recuperación de cuenta',
+      };
+    }
+
+    const newPassword = this.generateSecurePassword(12);
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    const { error: updateError } = await this.supabase
+      .from('usuarios')
+      .update({ password: hashedPassword })
+      .eq('id', user.id);
+
+    if (updateError) {
+      throw new InternalServerErrorException('Error al actualizar contraseña');
+    }
+
+    await this.emailService.sendRecoveryEmail(
+      user.email,
+      newPassword,
+      user.username,
+    );
+
+    return {
+      message: 'Se envió a su correo la recuperación de cuenta',
+    };
+  }
+
+  private generateSecurePassword(length: number): string {
+    const upper = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const lower = 'abcdefghijklmnopqrstuvwxyz';
+    const numbers = '0123456789';
+    const symbols = '@!#$%&*';
+
+    const getRandomChar = (chars: string): string => {
+      const array = new Uint32Array(1);
+      crypto.randomFillSync(array);
+      return chars[array[0] % chars.length];
+    };
+
+    let password = '';
+    password += getRandomChar(upper);
+    password += getRandomChar(lower);
+    password += getRandomChar(lower);
+    password += getRandomChar(lower);
+    password += getRandomChar(numbers);
+    password += getRandomChar(numbers);
+    password += getRandomChar(numbers);
+    password += getRandomChar(numbers);
+    password += getRandomChar(symbols);
+
+    const allChars = upper + lower + numbers + symbols;
+    for (let i = password.length; i < length; i++) {
+      password += getRandomChar(allChars);
+    }
+
+    return password;
   }
 }

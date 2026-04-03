@@ -17,6 +17,7 @@ import {
   LoginDto,
   RegisterDto,
   UpdateProfileDto,
+  ForgotPasswordDto,
 } from './dto/update-profile.dto';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { PermissionsGuard, Permisos } from './permissions.guard';
@@ -115,6 +116,12 @@ export class AuthController {
   @Post('register')
   async register(@Body() registerDto: RegisterDto) {
     return this.authService.register(registerDto);
+  }
+
+  @HttpCode(HttpStatus.OK)
+  @Post('forgot-password')
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.forgotPassword(dto);
   }
 
   @HttpCode(HttpStatus.OK)

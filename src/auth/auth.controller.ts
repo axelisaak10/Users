@@ -13,6 +13,9 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { AuthService } from './auth.service';
+import { SseService } from './services/sse.service';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import {
   LoginDto,
   RegisterDto,
@@ -26,7 +29,12 @@ import { ApiTags } from '@nestjs/swagger';
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly sseService: SseService,
+    private readonly jwtService: JwtService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @HttpCode(HttpStatus.OK)
   @Post('login')
@@ -38,7 +46,7 @@ export class AuthController {
     const result = await this.authService.login(user);
 
     response.cookie('Authentication', result.access_token, {
-      httpOnly: true,
+      httpOnly: false,
       secure: true,
       sameSite: 'none',
       maxAge: 1000 * 60 * 60,
@@ -161,5 +169,54 @@ export class AuthController {
   @Permisos('user:profile:edit')
   async updateProfile(@Req() req: any, @Body() dto: UpdateProfileDto) {
     return this.authService.updateProfile(req.user.sub, dto);
+  }
+
+  @Get('events')
+  async events(@Req() req: any, @Res() res: Response) {
+    const token = req.query.token || req.headers.authorization?.replace('Bearer ', '') || '';
+    console.log('[SSE] Events endpoint called, token:', token ? 'present' : 'missing');
+    
+    if (!token) {
+      console.log('[SSE] No token provided, returning 401');
+      res.status(401).send('Unauthorized');
+      return;
+    }
+    
+    try {
+      console.log('[SSE] Verifying token...');
+      const decoded = this.jwtService.verify(token, {
+        secret: this.configService.get<string>('JWT_SECRET', 'super-secret-jwt-key'),
+      });
+      console.log('[SSE] Token verified, userId:', decoded.sub);
+      
+      const clientId = decoded.sub;
+      const userId = decoded.sub;
+
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+
+      this.sseService.addClient(clientId, userId, res);
+
+      console.log('[SSE] Sending initial connected event...');
+      const sendInitialEvent = () => {
+        this.sseService.sendEvent(res, 'connected', { userId, timestamp: Date.now() });
+      };
+      sendInitialEvent();
+      console.log('[SSE] Initial event sent');
+
+      const pingInterval = setInterval(() => {
+        this.sseService.sendPing(res);
+      }, 30000);
+
+      req.on('close', () => {
+        clearInterval(pingInterval);
+        this.sseService.removeClient(clientId);
+      });
+    } catch (error) {
+      console.log('[SSE] Token verification failed:', error.message);
+      res.status(401).send('Invalid token');
+    }
   }
 }

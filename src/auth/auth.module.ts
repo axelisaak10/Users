@@ -17,6 +17,7 @@ import { RefreshTokenService } from './services/refresh-token.service';
 import { PermissionVerifyService } from './services/permission-verify.service';
 import { AuthMiddleware } from './middleware/auth.middleware';
 import { EmailService } from './services/email.service';
+import { SseService } from './services/sse.service';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { EmailService } from './services/email.service';
     BlacklistService,
     RefreshTokenService,
     PermissionVerifyService,
+    SseService,
   ],
   exports: [
     AuthService,
@@ -46,6 +48,7 @@ import { EmailService } from './services/email.service';
     BlacklistService,
     RefreshTokenService,
     PermissionVerifyService,
+    SseService,
   ],
 })
 export class AuthModule implements NestModule {
@@ -56,6 +59,7 @@ export class AuthModule implements NestModule {
         { path: 'auth/login', method: RequestMethod.POST },
         { path: 'auth/register', method: RequestMethod.POST },
         { path: 'auth/refresh', method: RequestMethod.POST },
+        { path: 'auth/events', method: RequestMethod.GET },
       )
       .forRoutes('*');
   }

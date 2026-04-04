@@ -16,6 +16,7 @@ import { ApiTags } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { PermissionsGuard, Permisos } from './permissions.guard';
+import { SseService } from './services/sse.service';
 import {
   CreateUserDto,
   UpdateUserDto,
@@ -27,9 +28,12 @@ import {
 @ApiTags('Users')
 @Controller('users')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
-@Permisos('superadmin')
+@Permisos('superadmin', 'user:manage')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly sseService: SseService,
+  ) {}
 
   @Get()
   async findAll(@Query() filters: SearchUserQueryDto) {
@@ -77,10 +81,18 @@ export class UsersController {
     @Param('id') id: string,
     @Body() assignPermissionsDto: AssignPermissionsDto,
   ) {
-    return this.usersService.assignPermissions(
+    const result = await this.usersService.assignPermissions(
       id,
       assignPermissionsDto.permisos,
     );
+    
+    this.sseService.broadcastToUser(id, 'permissions-updated', {
+      permisos_globales: result.permisos_globales,
+      permisos_globales_nombres: result.permisos_globales_nombres,
+      timestamp: new Date().toISOString(),
+    });
+    
+    return result;
   }
 
   @Delete(':id/permissions')
@@ -89,10 +101,18 @@ export class UsersController {
     @Param('id') id: string,
     @Body() removePermissionsDto: RemovePermissionsDto,
   ) {
-    return this.usersService.removePermissions(
+    const result = await this.usersService.removePermissions(
       id,
       removePermissionsDto.permisos,
     );
+    
+    this.sseService.broadcastToUser(id, 'permissions-updated', {
+      permisos_globales: result.permisos_globales,
+      permisos_globales_nombres: result.permisos_globales_nombres,
+      timestamp: new Date().toISOString(),
+    });
+    
+    return result;
   }
 
   @Get('permissions/list')

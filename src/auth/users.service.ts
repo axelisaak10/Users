@@ -300,10 +300,10 @@ export class UsersService {
     const { data } = await this.supabase
       .from('permisos')
       .select('id, nombre, descripcion')
-      .in('nombre', permisosIds);
+      .in('id', permisosIds);
     return (
       data?.map((p) => ({
-        id: p.nombre,
+        id: p.id,
         nombre: p.nombre,
         descripcion: p.descripcion || p.nombre,
       })) || []

@@ -36,7 +36,7 @@ export class AuthMiddleware implements NestMiddleware {
         }
 
         (req as any).user = {
-          id: decoded.sub,
+          sub: decoded.sub,
           permisos_globales: decoded.permisos_globales || [],
           jti: decoded.jti,
         };

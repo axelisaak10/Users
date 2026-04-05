@@ -15,8 +15,18 @@ import {
 } from './dto/user-management.dto';
 import { EmailService } from './services/email.service';
 
+interface PermissionsCache {
+  permisos: { id: string; nombre: string; descripcion: string }[];
+  timestamp: number;
+}
+
 @Injectable()
 export class UsersService {
+  private permissionsCache: Map<string, PermissionsCache> = new Map();
+  private allPermissionsCache: { data: any[]; timestamp: number } | null = null;
+  private readonly CACHE_TTL = 5 * 60 * 1000;
+  private readonly PAGE_SIZE = 50;
+
   constructor(
     @Inject('SUPABASE_CLIENT') private supabase: SupabaseClient,
     private emailService: EmailService,
@@ -27,6 +37,7 @@ export class UsersService {
       .from('usuarios')
       .select(
         'id, nombre_completo, username, email, telefono, direccion, fecha_inicio, fecha_nacimiento, last_login, permisos_globales, creado_en',
+        { count: 'exact' }
       );
 
     if (filters?.q) {
@@ -41,14 +52,22 @@ export class UsersService {
       query = query.ilike('email', `%${filters.email}%`);
     }
 
-    const { data, error } = await query;
+    if (filters?.limit) {
+      query = query.limit(filters.limit);
+    } else {
+      query = query.limit(this.PAGE_SIZE);
+    }
+
+    if (filters?.offset) {
+      query = query.range(filters.offset, filters.offset + (filters?.limit || this.PAGE_SIZE) - 1);
+    }
+
+    const { data, error, count } = await query;
     if (error) throw new BadRequestException(error.message);
 
     const usuariosConPermisos = await Promise.all(
       (data || []).map(async (user) => {
-        const permisos = await this.resolvePermisos(
-          user.permisos_globales || [],
-        );
+        const permisos = await this.getCachedPermissions(user.permisos_globales || []);
         return {
           ...user,
           permisos_globales_detailed: permisos,
@@ -57,7 +76,7 @@ export class UsersService {
       }),
     );
 
-    return usuariosConPermisos;
+    return { data: usuariosConPermisos, total: count };
   }
 
   async findById(id: string) {
@@ -71,7 +90,7 @@ export class UsersService {
 
     if (error || !data) throw new NotFoundException('Usuario no encontrado');
 
-    const permisos = await this.resolvePermisos(data.permisos_globales || []);
+    const permisos = await this.getCachedPermissions(data.permisos_globales || []);
     return {
       ...data,
       permisos_globales_detailed: permisos,
@@ -160,8 +179,10 @@ export class UsersService {
       updates.telefono = updateUserDto.telefono;
     if (updateUserDto.fecha_nacimiento !== undefined)
       updates.fecha_nacimiento = updateUserDto.fecha_nacimiento;
-    if (updateUserDto.permisos_globales)
+    if (updateUserDto.permisos_globales) {
+      this.invalidatePermissionsCache(id);
       updates.permisos_globales = updateUserDto.permisos_globales;
+    }
 
     const { data, error } = await this.supabase
       .from('usuarios')
@@ -175,6 +196,19 @@ export class UsersService {
     return data;
   }
 
+  async suspendUser(id: string) {
+    const { error } = await this.supabase
+      .from('usuarios')
+      .update({ permisos_globales: [] })
+      .eq('id', id);
+
+    if (error) throw new BadRequestException(error.message);
+
+    this.invalidatePermissionsCache(id);
+
+    return { message: 'Usuario suspendido correctamente' };
+  }
+
   async delete(id: string) {
     const { error } = await this.supabase
       .from('usuarios')
@@ -182,6 +216,8 @@ export class UsersService {
       .eq('id', id);
 
     if (error) throw new BadRequestException(error.message);
+
+    this.invalidatePermissionsCache(id);
 
     return { message: 'Usuario eliminado correctamente' };
   }
@@ -248,7 +284,9 @@ export class UsersService {
 
     if (error) throw new BadRequestException(error.message);
 
-    const permisosNombres = await this.resolvePermisos(newPermisos);
+    const permisosNombres = await this.getCachedPermissions(newPermisos);
+    this.invalidatePermissionsCache(id);
+    
     return {
       permisos_globales: newPermisos,
       permisos_globales_detailed: permisosNombres,
@@ -275,7 +313,9 @@ export class UsersService {
 
     if (error) throw new BadRequestException(error.message);
 
-    const permisosNombres = await this.resolvePermisos(newPermisos);
+    const permisosNombres = await this.getCachedPermissions(newPermisos);
+    this.invalidatePermissionsCache(id);
+    
     return {
       permisos_globales: newPermisos,
       permisos_globales_detailed: permisosNombres,
@@ -284,29 +324,65 @@ export class UsersService {
   }
 
   async getAllPermissions() {
+    const now = Date.now();
+    
+    if (this.allPermissionsCache && 
+        (now - this.allPermissionsCache.timestamp) < this.CACHE_TTL) {
+      return this.allPermissionsCache.data;
+    }
+
     const { data, error } = await this.supabase
       .from('permisos')
       .select('id, nombre, descripcion, creado_en')
       .order('nombre');
 
     if (error) throw new BadRequestException(error.message);
+    
+    this.allPermissionsCache = {
+      data,
+      timestamp: now
+    };
+    
     return data;
   }
 
-  private async resolvePermisos(
+  private async getCachedPermissions(
     permisosIds: string[],
   ): Promise<{ id: string; nombre: string; descripcion: string }[]> {
     if (!permisosIds || permisosIds.length === 0) return [];
+    
+    const cacheKey = permisosIds.sort().join(',');
+    const cached = this.permissionsCache.get(cacheKey);
+    const now = Date.now();
+
+    if (cached && (now - cached.timestamp) < this.CACHE_TTL) {
+      return cached.permisos;
+    }
+
     const { data } = await this.supabase
       .from('permisos')
       .select('id, nombre, descripcion')
       .in('id', permisosIds);
-    return (
-      data?.map((p) => ({
-        id: p.id,
-        nombre: p.nombre,
-        descripcion: p.descripcion || p.nombre,
-      })) || []
-    );
+
+    const result = (data?.map((p) => ({
+      id: p.id,
+      nombre: p.nombre,
+      descripcion: p.descripcion || p.nombre,
+    })) || []);
+
+    this.permissionsCache.set(cacheKey, {
+      permisos: result,
+      timestamp: now
+    });
+
+    return result;
+  }
+
+  invalidatePermissionsCache(userId: string): void {
+    const keysToDelete: string[] = [];
+    this.permissionsCache.forEach((value, key) => {
+      keysToDelete.push(key);
+    });
+    keysToDelete.forEach(key => this.permissionsCache.delete(key));
   }
 }

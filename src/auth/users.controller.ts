@@ -63,9 +63,8 @@ export class UsersController {
   }
 
   @Delete(':id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async delete(@Param('id') id: string) {
-    return this.usersService.delete(id);
+  async suspend(@Param('id') id: string) {
+    return this.usersService.suspendUser(id);
   }
 
   @Post(':id/change-password')

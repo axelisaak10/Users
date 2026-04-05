@@ -1,8 +1,16 @@
 import { Injectable, Inject, ForbiddenException } from '@nestjs/common';
 import { SupabaseClient } from '@supabase/supabase-js';
 
+interface PermissionCache {
+  nombres: string[];
+  timestamp: number;
+}
+
 @Injectable()
 export class PermissionVerifyService {
+  private permisosCache: Map<string, PermissionCache> = new Map();
+  private readonly CACHE_TTL = 5 * 60 * 1000;
+
   constructor(@Inject('SUPABASE_CLIENT') private supabase: SupabaseClient) {}
 
   async hasPermission(userId: string, permission: string): Promise<boolean> {
@@ -20,7 +28,7 @@ export class PermissionVerifyService {
       return false;
     }
 
-    const permisosNombres = await this.resolvePermisos(
+    const permisosNombres = await this.getCachedPermissionNames(
       user.permisos_globales || [],
     );
 
@@ -39,9 +47,21 @@ export class PermissionVerifyService {
     }
   }
 
-  private async resolvePermisos(permisosIds: string[]): Promise<string[]> {
+  invalidateCache(userId: string): void {
+    this.permisosCache.delete(userId);
+  }
+
+  private async getCachedPermissionNames(permisosIds: string[]): Promise<string[]> {
     if (!permisosIds || permisosIds.length === 0) {
       return [];
+    }
+
+    const cacheKey = permisosIds.sort().join(',');
+    const cached = this.permisosCache.get(cacheKey);
+    const now = Date.now();
+
+    if (cached && (now - cached.timestamp) < this.CACHE_TTL) {
+      return cached.nombres;
     }
 
     const { data } = await this.supabase
@@ -49,6 +69,13 @@ export class PermissionVerifyService {
       .select('nombre')
       .in('id', permisosIds);
 
-    return data?.map((p) => p.nombre) || [];
+    const nombres = data?.map((p) => p.nombre) || [];
+
+    this.permisosCache.set(cacheKey, {
+      nombres,
+      timestamp: now,
+    });
+
+    return nombres;
   }
 }

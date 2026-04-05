@@ -22,6 +22,9 @@ import { EmailService } from './services/email.service';
 
 @Injectable()
 export class AuthService {
+  private permisosCache: Map<string, { nombres: string[]; timestamp: number }> = new Map();
+  private readonly CACHE_TTL = 5 * 60 * 1000;
+
   constructor(
     @Inject('SUPABASE_CLIENT') private supabase: SupabaseClient,
     private jwtService: JwtService,
@@ -32,11 +35,28 @@ export class AuthService {
 
   private async resolvePermisos(permisosIds: string[]): Promise<string[]> {
     if (!permisosIds || permisosIds.length === 0) return [];
+    
+    const cacheKey = permisosIds.sort().join(',');
+    const cached = this.permisosCache.get(cacheKey);
+    const now = Date.now();
+
+    if (cached && (now - cached.timestamp) < this.CACHE_TTL) {
+      return cached.nombres;
+    }
+
     const { data } = await this.supabase
       .from('permisos')
       .select('nombre')
       .in('id', permisosIds);
-    return data?.map((p) => p.nombre) || [];
+    
+    const nombres = data?.map((p) => p.nombre) || [];
+    
+    this.permisosCache.set(cacheKey, {
+      nombres,
+      timestamp: now,
+    });
+    
+    return nombres;
   }
 
   async getUserPermisosFromBd(userId: string): Promise<string[]> {

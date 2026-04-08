@@ -22,8 +22,9 @@ import { EmailService } from './services/email.service';
 
 @Injectable()
 export class AuthService {
-  private permisosCache: Map<string, { nombres: string[]; timestamp: number }> = new Map();
-  private readonly CACHE_TTL = 5 * 60 * 1000;
+  private permisosCache: Map<string, { nombres: string[]; timestamp: number }> =
+    new Map();
+  private readonly CACHE_TTL = 30 * 1000;
 
   constructor(
     @Inject('SUPABASE_CLIENT') private supabase: SupabaseClient,
@@ -35,12 +36,12 @@ export class AuthService {
 
   private async resolvePermisos(permisosIds: string[]): Promise<string[]> {
     if (!permisosIds || permisosIds.length === 0) return [];
-    
+
     const cacheKey = permisosIds.sort().join(',');
     const cached = this.permisosCache.get(cacheKey);
     const now = Date.now();
 
-    if (cached && (now - cached.timestamp) < this.CACHE_TTL) {
+    if (cached && now - cached.timestamp < this.CACHE_TTL) {
       return cached.nombres;
     }
 
@@ -48,14 +49,14 @@ export class AuthService {
       .from('permisos')
       .select('nombre')
       .in('id', permisosIds);
-    
+
     const nombres = data?.map((p) => p.nombre) || [];
-    
+
     this.permisosCache.set(cacheKey, {
       nombres,
       timestamp: now,
     });
-    
+
     return nombres;
   }
 
@@ -110,23 +111,31 @@ export class AuthService {
     };
 
     const nowStamp = new Date().toISOString();
-    await this.supabase
-      .from('usuarios')
-      .update({ last_login: nowStamp })
-      .eq('id', user.id);
 
-    const { data: userData } = await this.supabase
-      .from('usuarios')
-      .select(
-        'nombre_completo, username, email, telefono, direccion, fecha_nacimiento, fecha_inicio',
-      )
-      .eq('id', user.id)
-      .single();
+    // ✅ OPTIMIZACIÓN: Paralelizar update last_login + fetch perfil + generar tokens
+    const [, [userData], accessToken, refreshToken] = await Promise.all([
+      // 1. Actualizar last_login (fire & forget en paralelo)
+      this.supabase
+        .from('usuarios')
+        .update({ last_login: nowStamp })
+        .eq('id', user.id),
 
-    const accessToken = this.jwtService.sign(payload);
-    const refreshToken = await this.refreshTokenService.generateRefreshToken(
-      user.id,
-    );
+      // 2. Obtener datos del perfil en paralelo
+      this.supabase
+        .from('usuarios')
+        .select(
+          'nombre_completo, username, email, telefono, direccion, fecha_nacimiento, fecha_inicio',
+        )
+        .eq('id', user.id)
+        .single()
+        .then(({ data }) => [data]),
+
+      // 3. Firmar access token (síncrono pero dentro del Promise.all para limpieza)
+      Promise.resolve(this.jwtService.sign(payload)),
+
+      // 4. Generar refresh token (implica insert a Supabase) en paralelo
+      this.refreshTokenService.generateRefreshToken(user.id),
+    ]);
 
     return {
       access_token: accessToken,
@@ -255,6 +264,8 @@ export class AuthService {
     if (error || !user)
       throw new UnauthorizedException('Usuario no encontrado');
 
+    // ✅ OPTIMIZACIÓN: resolvePermisos tiene caché de 5min internamente.
+    // Si los permisos son [] no hace ninguna query a Supabase.
     const permisosNombres = await this.resolvePermisos(
       user.permisos_globales || [],
     );

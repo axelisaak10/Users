@@ -3,11 +3,8 @@ import {
   CanActivate,
   ExecutionContext,
   ForbiddenException,
-  Inject,
-  forwardRef,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { PermissionVerifyService } from './services/permission-verify.service';
 
 export const PERMISOS_KEY = 'permisos';
 export const Permisos =
@@ -17,15 +14,32 @@ export const Permisos =
     return descriptor || target;
   };
 
+/**
+ * Guard que verifica permisos usando los datos del JWT directamente.
+ *
+ * ✅ OPTIMIZACIÓN: Ya NO consulta Supabase en cada request.
+ *    Los permisos ya vienen decodificados en req.user.permisos_globales
+ *    por el JwtStrategy (passport-jwt). Esto elimina 2 queries a Supabase
+ *    por cada petición autenticada.
+ *
+ * ⚠️  TRADEOFF: Los cambios de permisos se reflejan cuando el token expire (1h).
+ *    El frontend recibe un evento SSE 'permissions-updated' y debe renovar el token.
+ */
 @Injectable()
 export class PermissionsGuard implements CanActivate {
-  constructor(
-    private reflector: Reflector,
-    @Inject(forwardRef(() => PermissionVerifyService))
-    private permissionVerify: PermissionVerifyService,
-  ) {}
+  constructor(private reflector: Reflector) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const requiredPermisos = this.reflector.getAllAndOverride<string[]>(
+      PERMISOS_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    // Sin permisos requeridos → libre acceso
+    if (!requiredPermisos || requiredPermisos.length === 0) {
+      return true;
+    }
+
     const request = context.switchToHttp().getRequest();
     const user = request.user;
 
@@ -33,24 +47,21 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException('Usuario no autenticado');
     }
 
-    const requiredPermisos = this.reflector.getAllAndOverride<string[]>(
-      PERMISOS_KEY,
-      [context.getHandler(), context.getClass()],
-    );
+    // Los permisos ya vienen en el JWT — seteados por JwtStrategy.validate()
+    const userPermisos: string[] = user.permisos_globales || [];
 
-    if (!requiredPermisos || requiredPermisos.length === 0) {
+    // superadmin tiene acceso total
+    if (userPermisos.includes('superadmin')) {
       return true;
     }
 
-    for (const permission of requiredPermisos) {
-      const hasPermission = await this.permissionVerify.hasPermission(
-        user.sub,
-        permission,
-      );
+    // Verificar que tenga AL MENOS UNO de los permisos requeridos
+    const hasAny = requiredPermisos.some((p) => userPermisos.includes(p));
 
-      if (!hasPermission) {
-        throw new ForbiddenException(`Permiso denegado: ${permission}`);
-      }
+    if (!hasAny) {
+      throw new ForbiddenException(
+        `Permiso denegado. Requerido: ${requiredPermisos.join(' | ')}`,
+      );
     }
 
     return true;

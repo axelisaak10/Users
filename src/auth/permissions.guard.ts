@@ -48,7 +48,9 @@ export class PermissionsGuard implements CanActivate {
     }
 
     // Los permisos ya vienen en el JWT — seteados por JwtStrategy.validate()
-    const userPermisos: string[] = user.permisos_globales || [];
+    const globalPerms = user.permisos_globales || [];
+    const groupPerms = user.grupos?.flatMap((g: any) => g.permisos || []) || [];
+    const userPermisos: string[] = [...new Set([...globalPerms, ...groupPerms])];
 
     // superadmin tiene acceso total
     if (userPermisos.includes('superadmin')) {

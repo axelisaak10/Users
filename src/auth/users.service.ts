@@ -274,8 +274,8 @@ export class UsersService {
 
     if (!user) throw new NotFoundException('Usuario no encontrado');
 
-    const currentPermisos = user.permisos_globales || [];
-    const newPermisos = [...new Set([...currentPermisos, ...permisos])];
+    // El Gestor de Usuarios envía el arreglo absoluto de los permisos seleccionados en el UI
+    const newPermisos = [...new Set(permisos)];
 
     const { error } = await this.supabase
       .from('usuarios')
@@ -331,9 +331,22 @@ export class UsersService {
       return this.allPermissionsCache.data;
     }
 
+    const globalPerms = [
+      'superadmin',
+      'user:manage',
+      'user:add',
+      'user:edit',
+      'user:delete',
+      'user:profile:view',
+      'user:profile:edit',
+      'user:password:change',
+      'group:add'
+    ];
+
     const { data, error } = await this.supabase
       .from('permisos')
       .select('id, nombre, descripcion, creado_en')
+      .in('nombre', globalPerms)
       .order('nombre');
 
     if (error) throw new BadRequestException(error.message);

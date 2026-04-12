@@ -24,7 +24,10 @@ import { EmailService } from './services/email.service';
 export class AuthService {
   private permisosCache: Map<string, { nombres: string[]; timestamp: number }> =
     new Map();
+  private gruposCache: Map<string, { grupos: any[]; timestamp: number }> =
+    new Map();
   private readonly CACHE_TTL = 30 * 1000;
+  private readonly GRUPOS_CACHE_TTL = 60 * 1000;
 
   constructor(
     @Inject('SUPABASE_CLIENT') private supabase: SupabaseClient,
@@ -60,6 +63,107 @@ export class AuthService {
     return nombres;
   }
 
+  async getGruposDelUsuario(userId: string): Promise<any[]> {
+    const cacheKey = userId;
+    const cached = this.gruposCache.get(cacheKey);
+    const now = Date.now();
+
+    if (cached && now - cached.timestamp < this.GRUPOS_CACHE_TTL) {
+      return cached.grupos;
+    }
+
+    const { data, error } = await this.supabase
+      .from('grupo_miembros')
+      .select('grupo_id, grupos(nombre)')
+      .eq('usuario_id', userId);
+
+    if (error || !data) {
+      this.gruposCache.set(cacheKey, { grupos: [], timestamp: now });
+      return [];
+    }
+
+    const grupos = data.map((item: any) => ({
+      id: item.grupo_id,
+      nombre: item.grupos?.nombre || '',
+    }));
+
+    this.gruposCache.set(cacheKey, { grupos, timestamp: now });
+    return grupos;
+  }
+
+  async getPermisosDeGrupo(
+    grupoId: string,
+    usuarioId: string,
+  ): Promise<string[]> {
+    const cacheKey = `${grupoId}:${usuarioId}`;
+    const cached = this.permisosCache.get(cacheKey);
+    const now = Date.now();
+
+    if (cached && now - cached.timestamp < this.CACHE_TTL) {
+      return cached.nombres;
+    }
+
+    const { data } = await this.supabase
+      .from('grupo_usuario_permisos')
+      .select('permiso_id')
+      .eq('grupo_id', grupoId)
+      .eq('usuario_id', usuarioId);
+
+    if (!data || data.length === 0) {
+      this.permisosCache.set(cacheKey, { nombres: [], timestamp: now });
+      return [];
+    }
+
+    const permisoIds = data.map((p) => p.permiso_id);
+    const nombres = await this.resolvePermisos(permisoIds);
+
+    this.permisosCache.set(cacheKey, { nombres, timestamp: now });
+    return nombres;
+  }
+
+  async getPermisosCompletos(userId: string): Promise<{
+    permisos_globales: string[];
+    permisos_por_grupo: {
+      grupo_id: string;
+      nombre: string;
+      permisos: string[];
+    }[];
+    ultimo_actualizado: string;
+  }> {
+    const [user, grupos] = await Promise.all([
+      this.supabase
+        .from('usuarios')
+        .select('permisos_globales')
+        .eq('id', userId)
+        .single(),
+      this.getGruposDelUsuario(userId),
+    ]);
+
+    const permisosGlobales = await this.resolvePermisos(
+      user.data?.permisos_globales || [],
+    );
+
+    const permisosPorGrupo = await Promise.all(
+      grupos.map(async (grupo) => ({
+        grupo_id: grupo.id,
+        nombre: grupo.nombre,
+        permisos: await this.getPermisosDeGrupo(grupo.id, userId),
+      })),
+    );
+
+    return {
+      permisos_globales: permisosGlobales,
+      permisos_por_grupo: permisosPorGrupo.filter(
+        (pg) => pg.permisos.length > 0,
+      ),
+      ultimo_actualizado: new Date().toISOString(),
+    };
+  }
+
+  invalidateGruposCache(userId: string): void {
+    this.gruposCache.delete(userId);
+  }
+
   async getUserPermisosFromBd(userId: string): Promise<string[]> {
     const { data: user } = await this.supabase
       .from('usuarios')
@@ -72,10 +176,11 @@ export class AuthService {
   }
 
   async getCurrentPermissions(userId: string) {
-    const permisos = await this.getUserPermisosFromBd(userId);
+    const permisosCompletos = await this.getPermisosCompletos(userId);
     return {
-      permisos_globales: permisos,
-      ultimo_actualizado: new Date().toISOString(),
+      permisos_globales: permisosCompletos.permisos_globales,
+      permisos_por_grupo: permisosCompletos.permisos_por_grupo,
+      ultimo_actualizado: permisosCompletos.ultimo_actualizado,
     };
   }
 
@@ -103,12 +208,28 @@ export class AuthService {
   }
 
   async login(user: any) {
+    console.log('[AUTH-SERVICE] Login for user:', user.id);
+    
+    const grupos = await this.getGruposDelUsuario(user.id);
+    console.log('[AUTH-SERVICE] Grupos:', grupos);
+
+    const permisosPorGrupo = await Promise.all(
+      grupos.map(async (grupo) => ({
+        id: grupo.id,
+        nombre: grupo.nombre,
+        permisos: await this.getPermisosDeGrupo(grupo.id, user.id),
+      })),
+    );
+    console.log('[AUTH-SERVICE] Permisos por grupo:', permisosPorGrupo);
+
     const jti = crypto.randomUUID();
     const payload = {
       sub: user.id,
       permisos_globales: user.permisos_globales,
+      grupos: permisosPorGrupo,
       jti,
     };
+    console.log('[AUTH-SERVICE] JWT payload:', payload);
 
     const nowStamp = new Date().toISOString();
 
@@ -149,6 +270,7 @@ export class AuthService {
       fecha_nacimiento: userData?.fecha_nacimiento || '',
       fecha_inicio: userData?.fecha_inicio || '',
       permisos_globales: user.permisos_globales,
+      grupos: permisosPorGrupo,
     };
   }
 
@@ -173,11 +295,22 @@ export class AuthService {
     const permisosNombres = await this.resolvePermisos(
       user.permisos_globales || [],
     );
+    
+    const grupos = await this.getGruposDelUsuario(payload.sub);
+    const permisosPorGrupo = await Promise.all(
+      grupos.map(async (grupo) => ({
+        id: grupo.id,
+        nombre: grupo.nombre,
+        permisos: await this.getPermisosDeGrupo(grupo.id, payload.sub),
+      })),
+    );
+
     const newJti = crypto.randomUUID();
 
     const newPayload = {
       sub: payload.sub,
       permisos_globales: permisosNombres,
+      grupos: permisosPorGrupo,
       jti: newJti,
     };
 
@@ -191,6 +324,7 @@ export class AuthService {
       refresh_token: newRefreshToken,
       id: payload.sub,
       permisos_globales: permisosNombres,
+      grupos: permisosPorGrupo,
     };
   }
 
@@ -253,6 +387,8 @@ export class AuthService {
   }
 
   async getProfile(userId: string) {
+    console.log('[AUTH-SERVICE] getProfile for user:', userId);
+    
     const { data: user, error } = await this.supabase
       .from('usuarios')
       .select(
@@ -264,11 +400,19 @@ export class AuthService {
     if (error || !user)
       throw new UnauthorizedException('Usuario no encontrado');
 
-    // ✅ OPTIMIZACIÓN: resolvePermisos tiene caché de 5min internamente.
-    // Si los permisos son [] no hace ninguna query a Supabase.
     const permisosNombres = await this.resolvePermisos(
       user.permisos_globales || [],
     );
+
+    const grupos = await this.getGruposDelUsuario(userId);
+    const permisosPorGrupo = await Promise.all(
+      grupos.map(async (grupo) => ({
+        id: grupo.id,
+        nombre: grupo.nombre,
+        permisos: await this.getPermisosDeGrupo(grupo.id, userId),
+      })),
+    );
+    console.log('[AUTH-SERVICE] getProfile grupos:', permisosPorGrupo);
 
     return {
       id: user.id,
@@ -282,6 +426,7 @@ export class AuthService {
       last_login: user.last_login,
       creado_en: user.creado_en,
       permisos_globales: permisosNombres,
+      grupos: permisosPorGrupo,
     };
   }
 

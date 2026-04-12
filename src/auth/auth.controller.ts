@@ -10,6 +10,7 @@ import {
   UseGuards,
   Req,
   UnauthorizedException,
+  Param,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { AuthService } from './auth.service';
@@ -77,7 +78,7 @@ export class AuthController {
     const result = await this.authService.refreshAccessToken(refreshToken);
 
     response.cookie('Authentication', result.access_token, {
-      httpOnly: true,
+      httpOnly: false,
       secure: true,
       sameSite: 'none',
       maxAge: 1000 * 60 * 60,
@@ -164,6 +165,31 @@ export class AuthController {
     return this.authService.getCurrentPermissions(req.user.sub);
   }
 
+  @Get('permissions/grupos')
+  @UseGuards(JwtAuthGuard)
+  async getPermisosPorGrupos(@Req() req: any) {
+    return this.authService.getPermisosCompletos(req.user.sub);
+  }
+
+  @Get('grupos')
+  @UseGuards(JwtAuthGuard)
+  async getGruposDelUsuario(@Req() req: any) {
+    return this.authService.getGruposDelUsuario(req.user.sub);
+  }
+
+  @Get('grupos/:grupoId/permissions')
+  @UseGuards(JwtAuthGuard)
+  async getPermisosDeGrupo(@Req() req: any, @Param('grupoId') grupoId: string) {
+    const permisos = await this.authService.getPermisosDeGrupo(
+      grupoId,
+      req.user.sub,
+    );
+    return {
+      grupo_id: grupoId,
+      permisos,
+    };
+  }
+
   @Patch('profile')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @Permisos('user:profile:edit')
@@ -173,22 +199,31 @@ export class AuthController {
 
   @Get('events')
   async events(@Req() req: any, @Res() res: Response) {
-    const token = req.query.token || req.headers.authorization?.replace('Bearer ', '') || '';
-    console.log('[SSE] Events endpoint called, token:', token ? 'present' : 'missing');
-    
+    const token =
+      req.query.token ||
+      req.headers.authorization?.replace('Bearer ', '') ||
+      '';
+    console.log(
+      '[SSE] Events endpoint called, token:',
+      token ? 'present' : 'missing',
+    );
+
     if (!token) {
       console.log('[SSE] No token provided, returning 401');
       res.status(401).send('Unauthorized');
       return;
     }
-    
+
     try {
       console.log('[SSE] Verifying token...');
       const decoded = this.jwtService.verify(token, {
-        secret: this.configService.get<string>('JWT_SECRET', 'super-secret-jwt-key'),
+        secret: this.configService.get<string>(
+          'JWT_SECRET',
+          'super-secret-jwt-key',
+        ),
       });
       console.log('[SSE] Token verified, userId:', decoded.sub);
-      
+
       const clientId = decoded.sub;
       const userId = decoded.sub;
 
@@ -201,7 +236,10 @@ export class AuthController {
 
       console.log('[SSE] Sending initial connected event...');
       const sendInitialEvent = () => {
-        this.sseService.sendEvent(res, 'connected', { userId, timestamp: Date.now() });
+        this.sseService.sendEvent(res, 'connected', {
+          userId,
+          timestamp: Date.now(),
+        });
       };
       sendInitialEvent();
       console.log('[SSE] Initial event sent');

@@ -13,10 +13,8 @@ async function bootstrap() {
 
   app.enableCors({
     origin: [
-      'http://localhost:4200',
-      'https://seguridad-theta.vercel.app',
-      'https://front-end-siae.vercel.app',
-      'https://auth-dncf1iwnd-axelisaak10s-projects.vercel.app',
+      'http://localhost:3008',
+      'https://apigatway.onrender.com',
     ],
     credentials: true,
   });

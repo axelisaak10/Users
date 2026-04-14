@@ -11,7 +11,7 @@ import { ConfigService } from '@nestjs/config';
       useFactory: (configService: ConfigService): SupabaseClient => {
         return createClient(
           configService.get<string>('NEXT_PUBLIC_SUPABASE_URL')!,
-          configService.get<string>('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY')!,
+          configService.get<string>('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY')!,
         );
       },
     },

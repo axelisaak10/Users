@@ -16,6 +16,7 @@ async function bootstrap() {
       'http://localhost:4200',
       'https://seguridad-theta.vercel.app',
       'https://front-end-siae.vercel.app',
+      'https://auth-dncf1iwnd-axelisaak10s-projects.vercel.app',
     ],
     credentials: true,
   });
